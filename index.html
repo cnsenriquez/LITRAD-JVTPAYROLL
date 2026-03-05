@@ -247,33 +247,8 @@ td.sep-l{border-left:2px solid var(--border2)!important;}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
-  <!-- Firebase SDK -->
-  <script type="module">
-    import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
-    import { getFirestore, doc, getDoc, setDoc, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
 
-    const firebaseConfig = {
-      apiKey: "AIzaSyAHvWv_vbKM-ygR9hwjH9AomRzaYN4DJUw",
-      authDomain: "litrad-jvtpayroll.firebaseapp.com",
-      projectId: "litrad-jvtpayroll",
-      storageBucket: "litrad-jvtpayroll.firebasestorage.app",
-      messagingSenderId: "332077655342",
-      appId: "1:332077655342:web:5e44ddc2d2013de6ae86bf"
-    };
-
-    const app = initializeApp(firebaseConfig);
-    const fsdb = getFirestore(app);
-    const DOC_ID = 'payroll_data';
-    const COL    = 'payroll';
-
-    // Expose to main script
-    window._fsdb = fsdb;
-    window._fsDoc  = (id) => doc(fsdb, COL, id || DOC_ID);
-    window._fsGet  = getDoc;
-    window._fsSet  = setDoc;
-    window._fsSnap = onSnapshot;
-    window._firebaseReady = true;
-  </script>
+  <!-- Firebase v8 SDK -->
 </head>
 <body>
 
@@ -423,6 +398,8 @@ td.sep-l{border-left:2px solid var(--border2)!important;}
 </div></div>
 
 <script>
+// ── Firebase injected via module (see bottom of file) ──
+
 const SECTIONS=[
   {k:'pay',  l:'REGULAR PAY',         cls:'h-pay',  ded:false},
   {k:'allow',l:'WEEKLY ALLOWANCE',    cls:'h-allow',ded:false},
@@ -1698,102 +1675,126 @@ function doExportSummaryPDF(){
     exportWeeklyBreakdownPDF(wk, layout);
   }
 }
-// ── Save: localStorage (instant) + Firestore (sync) ──
+// ── FIREBASE SYNC ──
+// fbSave defined in module below
+
 save=function(){
-  localStorage.setItem('pr26c_'+curYear,JSON.stringify(DB));
-  localStorage.setItem('pr26cm_'+curYear,curMonth);
-  localStorage.setItem('pr26_curyear',curYear);
-  if(window._firebaseReady){
-    const payload={DB:JSON.stringify(DB),curMonth,curYear,updatedAt:Date.now()};
-    window._fsSet(window._fsDoc('payroll_'+curYear),payload).catch(e=>console.warn('Firestore save failed:',e));
-  }
+  localStorage.setItem('pr26c_'+curYear, JSON.stringify(DB));
+  localStorage.setItem('pr26cm_'+curYear, curMonth);
+  localStorage.setItem('pr26_curyear', curYear);
+  if(typeof window.fbSave==='function') window.fbSave();
 };
 
-// ── Load: try Firestore first, fallback to localStorage ──
 load=function(){
-  curYear=localStorage.getItem('pr26_curyear')||new Date().getFullYear().toString();
+  curYear = localStorage.getItem('pr26_curyear') || new Date().getFullYear().toString();
   getYearList();
 
-  // Show loading indicator
-  const loadingDiv=document.createElement('div');
-  loadingDiv.id='fb-loading';
-  loadingDiv.style='position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(255,255,255,.85);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;font-family:inherit';
-  loadingDiv.innerHTML='<div style="width:36px;height:36px;border:4px solid #e5e7eb;border-top-color:#1a4fcf;border-radius:50%;animation:spin .8s linear infinite"></div><div style="font-size:13px;font-weight:700;color:#374151">Syncing data...</div>';
-  document.body.appendChild(loadingDiv);
-  if(!document.getElementById('fb-spin-style')){
-    const s=document.createElement('style');s.id='fb-spin-style';
-    s.textContent='@keyframes spin{to{transform:rotate(360deg)}}';
-    document.head.appendChild(s);
-  }
+  // Show loading spinner
+  document.body.insertAdjacentHTML('beforeend',
+    '<div id="fb-loading" style="position:fixed;inset:0;background:rgba(255,255,255,.92);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px">'
+    +'<style>@keyframes fbspin{to{transform:rotate(360deg)}}</style>'
+    +'<div style="width:40px;height:40px;border:4px solid #dbeafe;border-top:4px solid #1d4ed8;border-radius:50%;animation:fbspin .7s linear infinite"></div>'
+    +'<div style="font-size:13px;font-weight:700;color:#1e3a8a;letter-spacing:.5px">LOADING PAYROLL DATA...</div>'
+    +'</div>'
+  );
 
-  function applyData(raw, month){
-    DB=raw?JSON.parse(raw):{};
-    curMonth=month||'';
-    if(!Object.keys(DB).filter(k=>k!=='_empMeta').length){DB['JANUARY']=seedJan();DB['FEBRUARY']=seedFeb();curMonth='FEBRUARY';}
-    if(!curMonth||!DB[curMonth])curMonth=Object.keys(DB).filter(k=>k!=='_empMeta')[0]||'';
-    // Also cache to localStorage
-    localStorage.setItem('pr26c_'+curYear,JSON.stringify(DB));
-    localStorage.setItem('pr26cm_'+curYear,curMonth);
-    document.getElementById('fb-loading')?.remove();
+  function removeSpin(){ document.getElementById('fb-loading')?.remove(); }
+
+  function applyAndRender(raw, month){
+    try{ DB = raw ? JSON.parse(raw) : {}; }catch(e){ DB={}; }
+    curMonth = month || '';
+    if(!Object.keys(DB).filter(k=>k!=='_empMeta').length){
+      DB['JANUARY']=seedJan(); DB['FEBRUARY']=seedFeb(); curMonth='FEBRUARY';
+    }
+    if(!curMonth||!DB[curMonth]) curMonth=Object.keys(DB).filter(k=>k!=='_empMeta')[0]||'';
+    localStorage.setItem('pr26c_'+curYear, JSON.stringify(DB));
+    localStorage.setItem('pr26cm_'+curYear, curMonth);
+    removeSpin();
     renderAll();
   }
 
-  if(window._firebaseReady){
-    // Poll until Firebase module is ready, then load
-    function tryFirebase(){
-      window._fsGet(window._fsDoc('payroll_'+curYear)).then(snap=>{
-        if(snap.exists()){
-          const d=snap.data();
-          // Also set curYear from Firestore if available
-          applyData(d.DB, d.curMonth);
-          // Set up real-time listener for cross-device sync
-          window._fsSnap(window._fsDoc('payroll_'+curYear),(snap)=>{
-            if(snap.exists()){
-              const d=snap.data();
-              // Only update if newer than local
-              const localTs=parseInt(localStorage.getItem('pr26_lastSave_'+curYear)||'0');
-              if(d.updatedAt>localTs){
-                localStorage.setItem('pr26_lastSave_'+curYear,d.updatedAt);
-                DB=JSON.parse(d.DB);
-                curMonth=d.curMonth||curMonth;
-                renderAll();
-              }
-            }
-          });
-        } else {
-          // No Firestore data yet — use localStorage, then push to Firestore
-          const raw=localStorage.getItem('pr26c_'+curYear)||localStorage.getItem('pr26c');
-          const month=localStorage.getItem('pr26cm_'+curYear)||localStorage.getItem('pr26cm')||'';
-          applyData(raw, month);
-          save(); // push local data to Firestore
-        }
-      }).catch(e=>{
-        console.warn('Firestore load failed, using localStorage:',e);
-        const raw=localStorage.getItem('pr26c_'+curYear)||localStorage.getItem('pr26c');
-        const month=localStorage.getItem('pr26cm_'+curYear)||localStorage.getItem('pr26cm')||'';
-        applyData(raw, month);
-      });
-    }
-    // Firebase module loads async — wait for it
-    let tries=0;
-    const waitFb=setInterval(()=>{
-      tries++;
-      if(window._firebaseReady){clearInterval(waitFb);tryFirebase();}
-      else if(tries>30){clearInterval(waitFb);
-        const raw=localStorage.getItem('pr26c_'+curYear);
-        const month=localStorage.getItem('pr26cm_'+curYear)||'';
-        applyData(raw,month);
-      }
-    },100);
+  function loadFromLocal(){
+    const raw = localStorage.getItem('pr26c_'+curYear) || localStorage.getItem('pr26c');
+    const month = localStorage.getItem('pr26cm_'+curYear) || localStorage.getItem('pr26cm') || '';
+    applyAndRender(raw, month);
+  }
+
+  // Firebase load handled by module script below
+  if(typeof window.fbLoad==='function'){
+    window.fbLoad(curYear, applyAndRender, loadFromLocal);
   } else {
-    // No Firebase — pure localStorage
-    const raw=localStorage.getItem('pr26c_'+curYear)||localStorage.getItem('pr26c');
-    const month=localStorage.getItem('pr26cm_'+curYear)||localStorage.getItem('pr26cm')||'';
-    applyData(raw,month);
+    loadFromLocal();
   }
 };
 
-load();
+</script>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
+import { getFirestore, doc, getDoc, setDoc, onSnapshot, collection } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+
+const firebaseConfig = {
+  apiKey: "AIzaSyAHvWv_vbKM-ygR9hwjH9AomRzaYN4DJUw",
+  authDomain: "litrad-jvtpayroll.firebaseapp.com",
+  projectId: "litrad-jvtpayroll",
+  storageBucket: "litrad-jvtpayroll.firebasestorage.app",
+  messagingSenderId: "332077655342",
+  appId: "1:332077655342:web:5e44ddc2d2013de6ae86bf"
+};
+
+const app = initializeApp(firebaseConfig);
+const db  = getFirestore(app);
+const COL = 'payroll';
+
+// Expose fbSave to main script
+window.fbSave = function(){
+  const curYear = localStorage.getItem('pr26_curyear') || new Date().getFullYear().toString();
+  const DB_raw  = localStorage.getItem('pr26c_'+curYear);
+  const curMonth= localStorage.getItem('pr26cm_'+curYear) || '';
+  const ts = Date.now();
+  localStorage.setItem('pr26_ts_'+curYear, ts);
+  const payload = { DB: DB_raw, curMonth, curYear, updatedAt: ts };
+  setDoc(doc(db, COL, 'payroll_'+curYear), payload)
+    .then(()=>console.log('Firestore: saved OK'))
+    .catch(e=>console.error('Firestore: save error', e));
+};
+
+// Expose fbLoad to main script
+window.fbLoad = function(curYear, applyAndRender, loadFromLocal){
+  getDoc(doc(db, COL, 'payroll_'+curYear))
+    .then(snap => {
+      if(snap.exists()){
+        console.log('Firestore: data loaded');
+        const d = snap.data();
+        applyAndRender(d.DB, d.curMonth);
+        // Real-time listener
+        onSnapshot(doc(db, COL, 'payroll_'+curYear), snap => {
+          if(!snap.exists()) return;
+          const d = snap.data();
+          const localTs = parseInt(localStorage.getItem('pr26_ts_'+curYear)||'0');
+          if(d.updatedAt > localTs + 2000){
+            console.log('Firestore: remote update received');
+            localStorage.setItem('pr26_ts_'+curYear, d.updatedAt);
+            localStorage.setItem('pr26c_'+curYear, d.DB);
+            localStorage.setItem('pr26cm_'+curYear, d.curMonth);
+            applyAndRender(d.DB, d.curMonth);
+          }
+        });
+      } else {
+        console.log('Firestore: no data yet, uploading local...');
+        loadFromLocal();
+        window.fbSave();
+      }
+    })
+    .catch(e => {
+      console.error('Firestore: load failed', e);
+      loadFromLocal();
+    });
+};
+
+// Call load() now that Firebase is ready
+// load() is defined in the main script above
+window.load();
 </script>
 </body>
 </html>
