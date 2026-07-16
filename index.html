@@ -77,6 +77,7 @@ th.h-pag{background:#f0fdf4;color:#047857!important;}
 th.h-sssl{background:#fef2f2;color:#991b1b!important;}
 th.h-pagl{background:#fef2f2;color:#b91c1c!important;}
 th.h-abs{background:#fffbeb;color:#b45309!important;}
+th.h-ca{background:#fef3c7;color:#92400e!important;}
 th.h-net{background:#d1fae5;color:#065f46!important;font-size:10px!important;}
 .pt tbody td{padding:0;border-right:1px solid #eef1f8;border-bottom:1px solid #f0f4f9;}
 .pt tbody tr:last-child td{border-bottom:none;}
@@ -411,6 +412,7 @@ const SECTIONS=[
   {k:'sssl', l:'SSS LOAN',            cls:'h-sssl', ded:true },
   {k:'pagl', l:'PAG-IBIG LOAN',       cls:'h-pagl', ded:true },
   {k:'abs',  l:'ABSENCES/DEDS',       cls:'h-abs',  ded:true },
+  {k:'ca',   l:'CASH ADVANCE',         cls:'h-ca',   ded:true },
 ];
 const WKS=['W1','W2','W3','W4','W5'];
 const DAYS=['Thu','Fri','Sat','Sun','Mon','Tue','Wed'];
@@ -440,7 +442,7 @@ const PF=v=>'₱'+n2(v).toLocaleString('en-PH',{minimumFractionDigits:2,maximumF
 function calcOTPay(emp,wk){const dr=getEffDailyRate(emp,wk);if(!dr)return 0;const hr=dr/8;const hrs=DAYS.reduce((s,d)=>s+n2(emp.ot?.[wk]?.[d]),0);return parseFloat((hr*1.25*hrs).toFixed(2));}
 function getEffDailyRate(emp,wk){const wd=emp.workDays||6;if(n2(emp.dailyRate)>0)return n2(emp.dailyRate);const base=n2(emp.cells['pay_'+wk])+n2(emp.cells['allow_'+wk]);return base/wd;}
 function getOTHrs(emp,wk){return DAYS.reduce((s,d)=>s+n2(emp.ot?.[wk]?.[d]),0);}
-function calcNet(emp,wk){const e=['pay','allow','ot','hol'].reduce((s,k)=>s+n2(emp.cells[k+'_'+wk]),0);const d=['sss','ph','pag','sssl','pagl','abs'].reduce((s,k)=>s+n2(emp.cells[k+'_'+wk]),0);return e-d;}
+function calcNet(emp,wk){const e=['pay','allow','ot','hol'].reduce((s,k)=>s+n2(emp.cells[k+'_'+wk]),0);const d=['sss','ph','pag','sssl','pagl','abs','ca'].reduce((s,k)=>s+n2(emp.cells[k+'_'+wk]),0);return e-d;}
 function ensureOT(emp){if(!emp.ot)emp.ot={};WKS.forEach(w=>{if(!emp.ot[w])emp.ot[w]={};DAYS.forEach(d=>{if(emp.ot[w][d]===undefined)emp.ot[w][d]='';});});}
 function mkEmp(name,vals={},workDays=6,dailyRate=null){const e={name,workDays,dailyRate,cells:{},ot:{},leave:[]};SECTIONS.forEach(s=>WKS.forEach(w=>{e.cells[s.k+'_'+w]=vals[s.k+'_'+w]??'';}));WKS.forEach(w=>{e.ot[w]={};DAYS.forEach(d=>{e.ot[w][d]='';});});return e;}
 
@@ -468,7 +470,7 @@ function seedFeb(){
 }
 function seedJan(){
   const mo=seedFeb();
-  const clr=['ot','hol','abs','sssl','pagl'];
+  const clr=['ot','hol','abs','sssl','pagl','ca'];
   [...mo.litrad,...mo.jvt].forEach(e=>{clr.forEach(k=>WKS.forEach(w=>{e.cells[k+'_'+w]=''}));WKS.forEach(w=>{DAYS.forEach(d=>{e.ot[w][d]='';});});});
   mo.litrad[0].cells['sssl_W1']=740.93;mo.litrad[0].cells['sssl_W3']=740.93;
   mo.litrad[3].cells['sssl_W1']=694.71;mo.litrad[3].cells['sssl_W3']=694.71;
@@ -622,10 +624,18 @@ function renderTabs(){
 }
 function switchMonth(m){curMonth=m;otWkIdx=0;save();renderAll();}
 
+function ensureCells(emp){
+  SECTIONS.forEach(s=>WKS.forEach(w=>{
+    const k=s.k+'_'+w;
+    if(emp.cells[k]===undefined) emp.cells[k]='';
+  }));
+}
 function renderPayroll(){
   const area=document.getElementById('payroll-area');
   if(!curMonth||!DB[curMonth]){area.innerHTML='<div style="padding:60px;text-align:center;color:var(--text3)">No month. Click <b>+ New Month</b>.</div>';return;}
   const mo=DB[curMonth];
+  // Ensure all employees have cells for any new SECTIONS added (e.g. ca)
+  [...(mo.litrad||[]),...(mo.jvt||[])].forEach(ensureCells);
   area.innerHTML=`<div class="wrap"><div class="section-title">MONTH: <span style="color:var(--blue)">${curMonth} ${curYear}</span></div>${renderPGroup('LITRAD EMPLOYEES','litrad',mo.litrad)}<div style="height:16px"></div>${renderPGroup('JVT PAYROLL','jvt',mo.jvt)}</div>`;
 }
 function renderPGroup(title,gk,emps){
@@ -996,10 +1006,11 @@ function buildPayslipCard(emp,wk){
   const sss=n2(emp.cells['sss_'+wk]),ph=n2(emp.cells['ph_'+wk]);
   const pag=n2(emp.cells['pag_'+wk]),sssl=n2(emp.cells['sssl_'+wk]);
   const pagl=n2(emp.cells['pagl_'+wk]),abs=n2(emp.cells['abs_'+wk]);
-  const totalEarn=pay+allow+ot+hol,totalDed=sss+ph+pag+sssl+pagl+abs,net=totalEarn-totalDed;
+  const ca=n2(emp.cells['ca_'+wk]);
+  const totalEarn=pay+allow+ot+hol,totalDed=sss+ph+pag+sssl+pagl+abs+ca,net=totalEarn-totalDed;
   // Build unified row array — one td per side using flex for label+amount
   const eArr=[[' Regular Pay',pay],['Allowance',allow],['Overtime Pay',ot],['Holiday Pay',hol]].filter(r=>r[1]>0);
-  const dArr=[['SSS',sss],['PhilHealth',ph],['Pag-IBIG',pag],['SSS Loan',sssl],['Pag-IBIG Loan',pagl],['Absences/Deds',abs]].filter(r=>r[1]>0);
+  const dArr=[['SSS',sss],['PhilHealth',ph],['Pag-IBIG',pag],['SSS Loan',sssl],['Pag-IBIG Loan',pagl],['Absences/Deds',abs],['Cash Advance',ca]].filter(r=>r[1]>0);
   const maxR=Math.max(eArr.length,dArr.length,1);
   const tdRow=(lbl,amt,cls)=>`<td class="${cls}"><div style="display:flex;justify-content:space-between;align-items:center;"><span style="color:#222">${lbl}</span><span style="color:#555;font-weight:500">${amt}</span></div></td>`;
   let unifiedRows='';
@@ -1485,7 +1496,7 @@ function exportMonthlySummaryPDF(){
         mSum(emp,['pay']),mSum(emp,['allow']),mSum(emp,['ot']),mSum(emp,['hol']),
         mSum(emp,['sss']),mSum(emp,['ph']),mSum(emp,['pag']),mSum(emp,['sssl']),
         mSum(emp,['pay','allow','ot','hol']),
-        mSum(emp,['pay','allow','ot','hol'])-mSum(emp,['sss','ph','pag','sssl','pagl','abs'])
+        mSum(emp,['pay','allow','ot','hol'])-mSum(emp,['sss','ph','pag','sssl','pagl','abs','ca'])
       ];
       x=m;
       vals.forEach((v,vi)=>{
@@ -1511,7 +1522,7 @@ function exportMonthlySummaryPDF(){
       const keys=[['pay'],['allow'],['ot'],['hol'],['sss'],['ph'],['pag'],['sssl'],
                   ['pay','allow','ot','hol'],
                   ['pay','allow','ot','hol']];
-      const deducKeys=['sss','ph','pag','sssl','pagl','abs'];
+      const deducKeys=['sss','ph','pag','sssl','pagl','abs','ca'];
       if(ci===9) return filtered.reduce((s,e)=>s+mSum(e,['pay','allow','ot','hol'])-mSum(e,deducKeys),0);
       return filtered.reduce((s,e)=>s+mSum(e,keys[ci]),0);
     });
@@ -1793,21 +1804,21 @@ function exportSummaryExcel(){
   if(!litrad.length && !jvt.length){ alert('Walang employees na kasama base sa filter.'); return; }
 
   const mSum=(emp,keys)=>WKS.reduce((s,w)=>s+keys.reduce((ss,k)=>ss+n2(emp.cells[k+'_'+w]),0),0);
-  const cols=['COMPANY','EMPLOYEE','REG PAY','ALLOWANCE','OT PAY','HOL PAY','SSS','PHILHEALTH','PAG-IBIG','SSS LOAN','PAG-IBIG LOAN','ABSENCES/DEDS','TOTAL EARNINGS','NET PAY'];
+  const cols=['COMPANY','EMPLOYEE','REG PAY','ALLOWANCE','OT PAY','HOL PAY','SSS','PHILHEALTH','PAG-IBIG','SSS LOAN','PAG-IBIG LOAN','ABSENCES/DEDS','CASH ADVANCE','TOTAL EARNINGS','NET PAY'];
   const rows=[cols.join(',')];
 
   function addGroup(emps,companyName){
     emps.forEach(emp=>{
       const reg=mSum(emp,['pay']), allow=mSum(emp,['allow']), ot=mSum(emp,['ot']), hol=mSum(emp,['hol']);
       const sss=mSum(emp,['sss']), ph=mSum(emp,['ph']), pag=mSum(emp,['pag']);
-      const sssl=mSum(emp,['sssl']), pagl=mSum(emp,['pagl']), abs=mSum(emp,['abs']);
+      const sssl=mSum(emp,['sssl']), pagl=mSum(emp,['pagl']), abs=mSum(emp,['abs']), ca=mSum(emp,['ca']);
       const totalEarn=reg+allow+ot+hol;
-      const totalDed=sss+ph+pag+sssl+pagl+abs;
+      const totalDed=sss+ph+pag+sssl+pagl+abs+ca;
       const net=totalEarn-totalDed;
       const r=[
         companyName, `"${emp.name}"`,
         reg.toFixed(2), allow.toFixed(2), ot.toFixed(2), hol.toFixed(2),
-        sss.toFixed(2), ph.toFixed(2), pag.toFixed(2), sssl.toFixed(2), pagl.toFixed(2), abs.toFixed(2),
+        sss.toFixed(2), ph.toFixed(2), pag.toFixed(2), sssl.toFixed(2), pagl.toFixed(2), abs.toFixed(2), ca.toFixed(2),
         totalEarn.toFixed(2), net.toFixed(2)
       ];
       rows.push(r.join(','));
@@ -1816,14 +1827,14 @@ function exportSummaryExcel(){
     if(emps.length){
       const sumKey=(k)=>emps.reduce((s,e)=>s+mSum(e,[k]),0);
       const reg=sumKey('pay'), allow=sumKey('allow'), ot=sumKey('ot'), hol=sumKey('hol');
-      const sss=sumKey('sss'), ph=sumKey('ph'), pag=sumKey('pag'), sssl=sumKey('sssl'), pagl=sumKey('pagl'), abs=sumKey('abs');
+      const sss=sumKey('sss'), ph=sumKey('ph'), pag=sumKey('pag'), sssl=sumKey('sssl'), pagl=sumKey('pagl'), abs=sumKey('abs'), ca=sumKey('ca');
       const totalEarn=reg+allow+ot+hol;
-      const totalDed=sss+ph+pag+sssl+pagl+abs;
+      const totalDed=sss+ph+pag+sssl+pagl+abs+ca;
       const net=totalEarn-totalDed;
       rows.push([
         companyName, '"TOTAL"',
         reg.toFixed(2), allow.toFixed(2), ot.toFixed(2), hol.toFixed(2),
-        sss.toFixed(2), ph.toFixed(2), pag.toFixed(2), sssl.toFixed(2), pagl.toFixed(2), abs.toFixed(2),
+        sss.toFixed(2), ph.toFixed(2), pag.toFixed(2), sssl.toFixed(2), pagl.toFixed(2), abs.toFixed(2), ca.toFixed(2),
         totalEarn.toFixed(2), net.toFixed(2)
       ].join(','));
     }
@@ -1907,6 +1918,121 @@ load=function(){
 };
 
 // ── ABSENCES SUMMARY ──
+// ── CASH ADVANCE TAB ──
+function renderCA(){
+  const area=document.getElementById('ca-area');
+  if(!area)return;
+  if(!DB[curMonth]){
+    area.innerHTML='<div style="padding:60px;text-align:center;color:var(--text3)">No data for this month.</div>';
+    return;
+  }
+
+  const groups=[
+    {key:'litrad', label:'LITRAD EMPLOYEES', color:'#1a4fcf', bg:'#eff4ff'},
+    {key:'jvt',    label:'JVT PAYROLL',      color:'#0e7c5a', bg:'#f0fdf9'},
+  ];
+
+  // Grand total across all groups
+  let grandTotal=0;
+  groups.forEach(grp=>{
+    (DB[curMonth][grp.key]||[]).forEach(emp=>{
+      WKS.forEach(w=>{ grandTotal+=n2(emp.cells['ca_'+w]); });
+    });
+  });
+
+  let html=`<div style="padding:16px 20px">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+      <div style="font-size:16px;font-weight:800;color:#1a1f36;letter-spacing:.5px">CASH ADVANCE</div>
+      <div style="font-size:12px;font-weight:700;color:#6b7a99;background:#f0f2f7;padding:4px 12px;border-radius:20px">${curMonth} ${curYear}</div>
+      <div style="margin-left:auto;background:#fff;border:1px solid #e5e7eb;border-left:4px solid #92400e;border-radius:8px;padding:8px 16px;text-align:right">
+        <div style="font-size:10px;font-weight:700;color:#999;text-transform:uppercase;letter-spacing:1px;margin-bottom:2px">Total Cash Advance</div>
+        <div style="font-size:20px;font-weight:800;color:#92400e">₱${grandTotal.toLocaleString('en-PH',{minimumFractionDigits:2})}</div>
+      </div>
+    </div>`;
+
+  groups.forEach(grp=>{
+    const emps=DB[curMonth][grp.key]||[];
+    if(!emps.length) return;
+
+    let grpTotal=0;
+    const wkTotals=WKS.map(()=>0);
+
+    const rows=emps.map(emp=>{
+      const wa=WKS.map((w,i)=>{
+        const v=n2(emp.cells['ca_'+w]);
+        wkTotals[i]+=v;
+        grpTotal+=v;
+        return v;
+      });
+      const tot=wa.reduce((s,v)=>s+v,0);
+      return{emp,wa,tot};
+    });
+
+    const hasAny=rows.some(r=>r.tot>0);
+
+    html+=`<div style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;margin-bottom:14px">
+      <div style="background:${grp.color};color:#fff;padding:10px 16px;font-size:11px;font-weight:800;letter-spacing:1px;display:flex;align-items:center;justify-content:space-between">
+        <span>${grp.label}</span>
+        <span style="background:rgba(255,255,255,.2);border-radius:10px;padding:3px 10px;font-size:11px;font-weight:800">Total: ₱${grpTotal.toLocaleString('en-PH',{minimumFractionDigits:2})}</span>
+      </div>
+      <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;min-width:600px">
+        <thead>
+          <tr style="background:#f8f9ff">
+            <th style="padding:9px 14px;text-align:left;font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:.8px;border-bottom:2px solid #e5e7eb;white-space:nowrap">Employee</th>
+            ${WKS.map(w=>`<th style="padding:9px 12px;text-align:right;font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:.8px;border-bottom:2px solid #e5e7eb">${w}</th>`).join('')}
+            <th style="padding:9px 14px;text-align:right;font-size:10px;font-weight:700;color:#92400e;text-transform:uppercase;letter-spacing:.8px;border-bottom:2px solid #e5e7eb">Monthly Total</th>
+          </tr>
+        </thead>
+        <tbody>`;
+
+    rows.forEach(({emp,wa,tot},i)=>{
+      const has=tot>0;
+      html+=`<tr style="background:${has?(i%2===0?'#fff':'#fafbff'):'#fafafa'};border-bottom:1px solid #f0f0f0">
+        <td style="padding:8px 14px;font-size:12px;font-weight:${has?700:400};color:${has?'#1a1f36':'#aaa'};white-space:nowrap">${emp.name}</td>
+        ${wa.map((v,wi)=>`
+        <td style="padding:8px 12px;text-align:right;vertical-align:middle">
+          <input type="number" min="0" step="0.01" value="${v||''}" placeholder="0"
+            onchange="setCA('${grp.key}',${i},'${WKS[wi]}',this.value)"
+            style="width:90px;text-align:right;border:1px solid ${v>0?'#fcd34d':'#e5e7eb'};border-radius:5px;padding:4px 7px;font-size:12px;font-weight:${v>0?700:400};color:${v>0?'#92400e':'#999'};background:${v>0?'#fffbeb':'#fff'};font-family:monospace;outline:none"
+            onfocus="this.style.borderColor='#f59e0b'"
+            onblur="this.style.borderColor=this.value>0?'#fcd34d':'#e5e7eb'">
+        </td>`).join('')}
+        <td style="padding:8px 14px;text-align:right;font-size:13px;font-weight:800;color:${has?'#92400e':'#ccc'};font-family:monospace">
+          ${has?'₱'+tot.toLocaleString('en-PH',{minimumFractionDigits:2}):'—'}
+        </td>
+      </tr>`;
+    });
+
+    // Totals row
+    html+=`<tr style="background:${grp.bg};border-top:2px solid ${grp.color}">
+      <td style="padding:9px 14px;font-size:11px;font-weight:800;color:${grp.color};text-transform:uppercase">TOTAL</td>
+      ${wkTotals.map(v=>`<td style="padding:9px 12px;text-align:right;font-size:12px;font-weight:800;color:${grp.color};font-family:monospace">${v>0?'₱'+v.toLocaleString('en-PH',{minimumFractionDigits:2}):'—'}</td>`).join('')}
+      <td style="padding:9px 14px;text-align:right;font-size:13px;font-weight:800;color:${grp.color};font-family:monospace">₱${grpTotal.toLocaleString('en-PH',{minimumFractionDigits:2})}</td>
+    </tr>
+    </tbody>
+    </table></div>
+    ${!hasAny?`<div style="text-align:center;padding:12px;font-size:11px;color:#aaa">Lahat ng employees ay walang cash advance ngayong buwan.</div>`:''}
+    </div>`;
+  });
+
+  html+=`</div>`;
+  area.innerHTML=html;
+}
+
+// ── Set CA value for one employee/week ──
+function setCA(grpKey, empIdx, wk, val){
+  const emp=DB[curMonth]?.[grpKey]?.[empIdx];
+  if(!emp) return;
+  const v=parseFloat(val)||0;
+  emp.cells['ca_'+wk]=v||'';
+  save();
+  // Refresh the monthly total cell for this employee without full re-render
+  const row=document.querySelectorAll(`#ca-area table`);
+  // Update the monthly total display - just re-render the tab
+  renderCA();
+}
+
 function renderAbsences(){
   const area=document.getElementById('absences-area');
   if(!area)return;
