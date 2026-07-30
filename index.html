@@ -1570,6 +1570,7 @@ function exportWeeklyBreakdownPDF(selectedWk, layout){
     {key:'pag',    label:'Pag-IBIG',  w:15, align:'right'},
     {key:'sssl',   label:'SSS Loan',  w:15, align:'right'},
     {key:'abs',    label:'ABS/DED',   w:15, align:'right'},
+    {key:'ca',     label:'CASH ADV',  w:15, align:'right'},
     {key:'earn',   label:'TOTAL EARN',w:23, align:'right'},
     {key:'net',    label:'NET PAY',   w:23, align:'right'},
   ];
@@ -1590,13 +1591,14 @@ function exportWeeklyBreakdownPDF(selectedWk, layout){
     const otHrsByDay=DAY_COLS.map(d=>n2(emp.ot?.[wk]?.[d]));
     const otHrsTotal=otHrsByDay.reduce((s,v)=>s+v,0);
     const otPay=n2(emp.cells['ot_'+wk]);
+    const ca=n2(emp.cells['ca_'+selectedWk]);
     const earn=pay+allow+otPay+hol;
-    const ded=sss+ph+pag+sssl+pagl+abs;
+    const ded=sss+ph+pag+sssl+pagl+abs+ca;
     return {
       name:emp.name, pay,allow,
       ...Object.fromEntries(DAY_COLS.map((d,i)=>['ot_'+d, otHrsByDay[i]])),
       ot_total:otHrsTotal, ot_pay:otPay, hol,
-      sss,ph,pag,sssl,abs:abs+pagl,
+      sss,ph,pag,sssl,abs:abs+pagl,ca,
       earn, net:earn-ded
     };
   }
